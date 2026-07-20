@@ -28,25 +28,17 @@ function Dashboard() {
         <h2>See it anywhere. Make it yours. Be ready for what's next.</h2>
 
         <section>
-          <h3>Universal Fashion Capture</h3>
+  <h3>Universal Fashion Capture</h3>
 
-          <p>
-            Turn fashion inspiration from anywhere into personalized,
-            shoppable looks.
-          </p>
+  <p>
+    Upload an image or video, or paste a public media URL to turn
+    inspiration from anywhere into personalized fashion.
+  </p>
 
-          <button disabled>
-            Upload Image
-          </button>
-
-          <button disabled>
-            Upload Video
-          </button>
-
-          <button disabled>
-            Paste Video URL
-          </button>
-        </section>
+  <button onClick={() => navigate("/capture")}>
+    Capture Fashion Inspiration
+  </button>
+</section>
 
         <section>
           <h3>Life Event Planner</h3>

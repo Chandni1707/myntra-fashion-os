@@ -6,6 +6,20 @@ from app.database import database
 from app.schemas.capture import ImageURLRequest, VideoURLRequest
 from app.services.file_handler import save_upload_file
 from app.utils.auth import get_current_user
+from app.schemas.capture import (
+    ImageURLRequest,
+    VideoURLRequest,
+    TransformPromptRequest,
+)
+from bson import ObjectId
+from fastapi import HTTPException
+
+from app.services.intent_parser import parse_fashion_intent
+from app.services.fashion_analyzer import analyze_fashion_image
+from app.services.recommendation_engine import recommend_outfit
+from PIL import Image
+from app.services.visual_retriever import retrieve_visual_candidates
+import traceback
 
 
 router = APIRouter(
@@ -167,4 +181,284 @@ def submit_image_url(
             "status": "pending_retrieval",
             "url": str(request.url),
         },
+    }
+
+@router.post("/{capture_id}/transform")
+def transform_capture(
+    capture_id: str,
+    request: TransformPromptRequest,
+    current_user=Depends(get_current_user),
+):
+    if not ObjectId.is_valid(capture_id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid capture ID",
+        )
+
+    capture = database.captures.find_one({
+        "_id": ObjectId(capture_id),
+        "user_id": current_user["_id"],
+    })
+
+    if not capture:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Capture not found",
+        )
+
+    parsed_intent = parse_fashion_intent(request.prompt)
+
+    database.captures.update_one(
+        {
+            "_id": capture["_id"]
+        },
+        {
+            "$set": {
+                "transformation_request": {
+                    "prompt": request.prompt,
+                    "parsed_intent": parsed_intent,
+                    "status": "intent_parsed",
+                    "created_at": datetime.now(timezone.utc),
+                },
+                "updated_at": datetime.now(timezone.utc),
+            }
+        },
+    )
+
+    return {
+        "message": "Fashion instruction understood successfully",
+        "capture_id": capture_id,
+        "parsed_intent": parsed_intent,
+    }
+@router.post("/{capture_id}/analyze")
+def analyze_capture(
+    capture_id: str,
+    current_user=Depends(get_current_user),
+):
+    if not ObjectId.is_valid(capture_id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid capture ID",
+        )
+
+    capture = database.captures.find_one(
+        {
+            "_id": ObjectId(capture_id),
+            "user_id": current_user["_id"],
+        }
+    )
+
+    if not capture:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Capture not found",
+        )
+
+    if capture["input_type"] != "image":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="AI analysis currently supports uploaded images only",
+        )
+
+    image_path = capture["source"]["file_path"]
+
+    try:
+        analysis = analyze_fashion_image(image_path)
+
+    except FileNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Uploaded image file was not found",
+        )
+
+    except Exception as exc:
+        traceback.print_exc()
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        )
+
+    database.captures.update_one(
+        {"_id": capture["_id"]},
+        {
+            "$set": {
+                "analysis": analysis,
+                "status": "analyzed",
+                "updated_at": datetime.now(timezone.utc),
+            }
+        },
+    )
+
+    return {
+        "message": "Fashion image analyzed successfully",
+        "capture_id": capture_id,
+        "analysis": analysis,
+    }
+@router.post("/{capture_id}/recommend")
+def recommend_capture_outfit(
+    capture_id: str,
+    current_user=Depends(get_current_user),
+):
+    # -----------------------------------------------------
+    # Validate capture ID
+    # -----------------------------------------------------
+
+    if not ObjectId.is_valid(capture_id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid capture ID",
+        )
+
+    # -----------------------------------------------------
+    # Find capture belonging to current user
+    # -----------------------------------------------------
+
+    capture = database.captures.find_one(
+        {
+            "_id": ObjectId(capture_id),
+            "user_id": current_user["_id"],
+        }
+    )
+
+    if not capture:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Capture not found",
+        )
+
+    # -----------------------------------------------------
+    # Require AI analysis
+    # -----------------------------------------------------
+
+    analysis = capture.get("analysis")
+    image_path = capture["source"]["file_path"]
+
+    image = Image.open(image_path).convert("RGB")
+
+    visual_scores = retrieve_visual_candidates(
+        image=image,
+        top_k=100,
+    )
+
+    if not analysis:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "This capture has not been analyzed yet. "
+                "Analyze the image before requesting recommendations."
+            ),
+        )
+
+    # -----------------------------------------------------
+    # Require transformation prompt
+    # -----------------------------------------------------
+
+    transformation_request = capture.get(
+        "transformation_request"
+    )
+
+    if not transformation_request:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "No fashion instruction found. "
+                "Submit a transformation prompt first."
+            ),
+        )
+
+    parsed_intent = transformation_request.get(
+        "parsed_intent"
+    )
+
+    if not parsed_intent:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Fashion instruction has not been parsed yet.",
+        )
+
+    # -----------------------------------------------------
+    # Load current user's saved preferences
+    # -----------------------------------------------------
+
+    user_document = database.users.find_one(
+        {
+            "_id": current_user["_id"],
+        }
+    )
+
+    saved_preferences = {}
+
+    if user_document:
+        saved_preferences = user_document.get("preferences", {})
+
+    user_preferences = {
+        "preferred_styles": saved_preferences.get("styles", []),
+        "preferred_colors": saved_preferences.get("colors", []),
+        "preferred_fit": saved_preferences.get("fit"),
+        "default_budget": saved_preferences.get("default_budget"),
+        "preferred_gender": saved_preferences.get("preferred_gender"),
+    }
+
+    # -----------------------------------------------------
+    # Generate recommendation
+    # -----------------------------------------------------
+
+    try:
+        recommendation = recommend_outfit(
+            parsed_intent=parsed_intent,
+            user_preferences=user_preferences,
+            analysis=analysis,
+            visual_scores=visual_scores,
+        )
+
+    except FileNotFoundError as exc:
+        print(f"Catalogue error: {exc}")
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Product catalogue could not be found.",
+        )
+
+    except ValueError as exc:
+        print(f"Catalogue validation error: {exc}")
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Product catalogue format is invalid.",
+        )
+
+    except Exception as exc:
+        traceback.print_exc()
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        )
+
+    # -----------------------------------------------------
+    # Save recommendation to MongoDB
+    # -----------------------------------------------------
+
+    database.captures.update_one(
+        {
+            "_id": capture["_id"],
+        },
+        {
+            "$set": {
+                "recommendation": recommendation,
+                "status": "recommended",
+                "updated_at": datetime.now(timezone.utc),
+            }
+        },
+    )
+
+    # -----------------------------------------------------
+    # Return final result
+    # -----------------------------------------------------
+
+    return {
+        "message": "Personalized outfit generated successfully",
+        "capture_id": capture_id,
+        "recommendation": recommendation,
     }

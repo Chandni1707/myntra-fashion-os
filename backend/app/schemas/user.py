@@ -18,3 +18,4 @@ class StylePreferences(BaseModel):
     preferred_colors: List[str] = []
     preferred_fit: str = "regular"
     default_budget: float = Field(default=3000, gt=0)
+    preferred_gender: str | None = None

@@ -4,14 +4,17 @@ from app.database import check_database_connection
 from app.api.auth import router as auth_router
 from app.api.users import router as users_router
 from app.api.capture import router as capture_router
+from app.api.visual_search import router as visual_router
 app = FastAPI(
     title="Myntra Fashion OS API",
     description="AI-powered universal fashion capture and life event planner",
     version="1.0.0"
 )
+
 app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(capture_router)
+app.include_router(visual_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -21,7 +24,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-app.include_router(auth_router)
+
 
 
 @app.get("/")

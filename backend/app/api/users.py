@@ -38,7 +38,8 @@ def update_my_preferences(
         "styles": preferences.preferred_styles,
         "colors": preferences.preferred_colors,
         "fit": preferences.preferred_fit,
-        "default_budget": preferences.default_budget
+        "default_budget": preferences.default_budget,
+        "preferred_gender": preferences.preferred_gender,
     }
 
     database.users.update_one(

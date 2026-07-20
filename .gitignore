@@ -33,3 +33,14 @@ backend/app/uploads/videos/*
 # OS files
 .DS_Store
 Thumbs.db
+
+#my copy files
+backend/app/services/recommendation_engine_1.py
+backend/app/data/product_images/
+backend/app/data/clip/images/
+# Test files
+backend/tests/
+backend/test_intend.py
+
+#  Temporary images
+# backend/image.png
