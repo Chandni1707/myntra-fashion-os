@@ -4,6 +4,10 @@ import json
 import faiss
 import numpy as np
 from sentence_transformers import SentenceTransformer
+
+from threading import Lock
+_model = None
+_model_lock = Lock()
 _metadata = None
 from app.services.intent_expander import expand_fashion_intent
 
@@ -52,11 +56,11 @@ def get_semantic_model() -> SentenceTransformer:
     global _model
 
     if _model is None:
-        print(f"Loading semantic model: {MODEL_NAME}")
-
-        _model = SentenceTransformer(MODEL_NAME)
-
-        print("Semantic model loaded successfully.")
+        with _model_lock:
+            if _model is None:
+                print(f"Loading semantic model: {MODEL_NAME}")
+                _model = SentenceTransformer(MODEL_NAME)
+                print("Semantic model loaded successfully.")
 
     return _model
 

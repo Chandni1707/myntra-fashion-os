@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
-
+from app.services.video_downloader import download_video
+import os
 from fastapi import APIRouter, Depends, File, UploadFile, status
 
 from app.database import database
@@ -20,6 +21,11 @@ from app.services.recommendation_engine import recommend_outfit
 from PIL import Image
 from app.services.visual_retriever import retrieve_visual_candidates
 import traceback
+from app.services.image_downloader import download_image
+from app.services.video_utils import extract_frames
+import tempfile
+import os
+import requests
 
 
 router = APIRouter(
@@ -230,6 +236,36 @@ def transform_capture(
         "capture_id": capture_id,
         "parsed_intent": parsed_intent,
     }
+
+def get_image_path_for_analysis(capture):
+    input_type = capture["input_type"]
+
+    # Uploaded image
+    if input_type == "image":
+        return capture["source"]["file_path"]
+
+    # Uploaded video
+    elif input_type == "video":
+        video_path = capture["source"]["file_path"]
+        return extract_frames(video_path)
+
+    # Image URL
+    elif input_type == "image_url":
+        url = capture["source"]["url"]
+        return download_image(url)
+
+    # Video URL
+    elif input_type == "video_url":
+
+        url = capture["source"]["url"]
+
+        video_path = download_video(url)
+        return extract_frames(video_path)
+
+        
+
+    raise ValueError("Unsupported capture type")
+
 @router.post("/{capture_id}/analyze")
 def analyze_capture(
     capture_id: str,
@@ -254,16 +290,46 @@ def analyze_capture(
             detail="Capture not found",
         )
 
-    if capture["input_type"] != "image":
+    try:
+        image_path = get_image_path_for_analysis(capture)
+
+    except Exception as exc:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="AI analysis currently supports uploaded images only",
+            status_code=400,
+            detail=f"Unable to prepare media for analysis: {exc}",
         )
 
-    image_path = capture["source"]["file_path"]
-
     try:
-        analysis = analyze_fashion_image(image_path)
+        if isinstance(image_path, list):
+
+            analyses = []
+
+            for frame in image_path:
+                analyses.append(analyze_fashion_image(frame))
+
+            merged_items = []
+            merged_colors = set()
+
+            for result in analyses:
+
+                for item in result.get("items", []):
+
+                    if item not in merged_items:
+                        merged_items.append(item)
+
+                    color = item.get("color")
+
+                    if color:
+                        merged_colors.add(color)
+
+            analysis = {
+                "overall_description": analyses[0].get("overall_description",""),
+                "dominant_colors": list(merged_colors),
+                "items": merged_items,
+            }
+
+        else:
+            analysis = analyze_fashion_image(image_path)
 
     except FileNotFoundError:
         raise HTTPException(
@@ -284,6 +350,7 @@ def analyze_capture(
         {
             "$set": {
                 "analysis": analysis,
+                "analysis_image": image_path,
                 "status": "analyzed",
                 "updated_at": datetime.now(timezone.utc),
             }
@@ -332,14 +399,41 @@ def recommend_capture_outfit(
     # -----------------------------------------------------
 
     analysis = capture.get("analysis")
-    image_path = capture["source"]["file_path"]
+    image_path = capture.get(
+    "analysis_image",
+    capture["source"].get("file_path"),
+)
 
-    image = Image.open(image_path).convert("RGB")
+    if isinstance(image_path, str):
 
-    visual_scores = retrieve_visual_candidates(
-        image=image,
-        top_k=100,
-    )
+        image = Image.open(image_path).convert("RGB")
+
+        visual_scores = retrieve_visual_candidates(
+            image=image,
+            top_k=100,
+        )
+
+    else:
+
+        merged_scores = {}
+
+        for frame in image_path:
+
+            image = Image.open(frame).convert("RGB")
+
+            scores = retrieve_visual_candidates(
+                image=image,
+                top_k=100,
+            )
+
+            for pid, score in scores.items():
+
+                merged_scores[pid] = max(
+                    merged_scores.get(pid, 0),
+                    score,
+                )
+
+        visual_scores = merged_scores
 
     if not analysis:
         raise HTTPException(
@@ -452,6 +546,40 @@ def recommend_capture_outfit(
             }
         },
     )
+    # -----------------------------------------------------
+    # Cleanup temporary files
+    # -----------------------------------------------------
+
+    analysis_image = capture.get("analysis_image")
+
+    if isinstance(analysis_image, str):
+
+        if capture["input_type"] != "image" and os.path.exists(analysis_image):
+            try:
+                os.remove(analysis_image)
+            except Exception:
+                pass
+
+    elif isinstance(analysis_image, list):
+
+        for frame in analysis_image:
+            if os.path.exists(frame):
+                try:
+                    os.remove(frame)
+                except Exception:
+                    pass
+
+    video_path = capture["source"].get("file_path")
+
+    if (
+        capture["input_type"] in ["video", "video_url"]
+        and video_path
+        and os.path.exists(video_path)
+    ):
+        try:
+            os.remove(video_path)
+        except Exception:
+            pass
 
     # -----------------------------------------------------
     # Return final result

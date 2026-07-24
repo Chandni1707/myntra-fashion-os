@@ -33,26 +33,38 @@ COLORS = [
 
 FASHION_ITEMS = {
     "top": [
-        "shirt",
-        "t-shirt",
-        "tshirt",
-        "top",
-        "blouse",
-        "crop top",
-        "kurta",
-        "kurti",
-        "sweater",
-        "hoodie",
+       "shirt",
+    "t-shirt",
+    "oversized t-shirt",
+    "graphic tee",
+    "tank top",
+    "cami",
+    "camisole",
+    "henley",
+    "polo",
+    "crop top",
+    "kurti",
+    "kurta",
+    "hoodie",
+    "sweatshirt",
+    "blazer"
     ],
 
     "bottom": [
-        "jeans",
-        "pants",
-        "trousers",
-        "skirt",
-        "shorts",
-        "palazzo",
-        "leggings",
+         "cargo pants",
+    "cargo",
+    "joggers",
+    "jeans",
+    "wide leg jeans",
+    "mom jeans",
+    "skinny jeans",
+    "straight jeans",
+    "flared jeans",
+    "leggings",
+    "palazzo",
+    "trousers",
+    "shorts",
+    "skirt"
     ],
 
     "dress": [
@@ -239,15 +251,24 @@ def find_color_before_item(caption, item):
 
 
 def extract_fashion_items(caption):
+
     caption_lower = caption.lower()
 
     detected_items = []
+    seen = set()
 
     for category, item_names in FASHION_ITEMS.items():
 
-        for item_name in item_names:
+        for item_name in sorted(item_names,key=len,reverse=True,):
 
             if item_name in caption_lower:
+
+                key = (category, item_name)
+
+                if key in seen:
+                    continue
+
+                seen.add(key)
 
                 detected_items.append({
                     "category": category,
@@ -259,7 +280,6 @@ def extract_fashion_items(caption):
                 })
 
     return detected_items
-
 
 def extract_aesthetics(caption):
     caption_lower = caption.lower()
@@ -321,6 +341,7 @@ def extract_dominant_colors(caption: str):
 
     return list(dict.fromkeys(colors))
 def analyze_fashion_image(image_path: str) -> dict:
+
     path = Path(image_path)
 
     if not path.exists():
@@ -332,53 +353,68 @@ def analyze_fashion_image(image_path: str) -> dict:
 
     image = Image.open(path).convert("RGB")
 
-    fashion_prompt = "The person is wearing"
+    prompts = [
+        "Describe the clothing in detail.",
+        "What top is the person wearing?",
+        "What bottom is the person wearing?",
+        "Describe the footwear.",
+        "Describe the accessories.",
+        "What colors are visible?",
+        "What fashion style is this outfit?"
+    ]
 
-    inputs = processor(
-        images=image,
-        text=fashion_prompt,
-        return_tensors="pt",
-    )
+    captions = []
 
-    inputs = {
-        key: value.to(device)
-        for key, value in inputs.items()
-    }
+    for prompt in prompts:
 
-    with torch.inference_mode():
-
-        output = model.generate(
-            **inputs,
-            max_new_tokens=60,
+        inputs = processor(
+            images=image,
+            text=prompt,
+            return_tensors="pt",
         )
 
-    caption = processor.decode(
-        output[0],
-        skip_special_tokens=True,
-    )
+        inputs = {
+            k: v.to(device)
+            for k, v in inputs.items()
+        }
 
-    items = extract_fashion_items(caption)
+        with torch.inference_mode():
 
-    aesthetics = extract_aesthetics(caption)
+            output = model.generate(
+                **inputs,
+                max_new_tokens=60,
+            )
 
-    attributes = extract_attributes(caption)
+        answer = processor.decode(
+            output[0],
+            skip_special_tokens=True,
+        )
 
-    dominant_colors = extract_dominant_colors(caption)
-    
+        captions.append(answer)
+
+    full_caption = ". ".join(captions)
+
+    items = extract_fashion_items(full_caption)
+
+    aesthetics = extract_aesthetics(full_caption)
+
+    attributes = extract_attributes(full_caption)
+
+    dominant_colors = extract_dominant_colors(full_caption)
 
     return {
 
-    "model": MODEL_NAME,
+        "model": MODEL_NAME,
 
-    "device": str(device),
+        "device": str(device),
 
-    "overall_description": caption,
+        "overall_description": full_caption,
 
-    "overall_style": aesthetics,
+        "overall_style": aesthetics,
 
-    "dominant_colors": dominant_colors,
+        "dominant_colors": dominant_colors,
 
-    "fashion_attributes": attributes,
+        "fashion_attributes": attributes,
 
-    "items": items,
-}
+        "items": items,
+    }

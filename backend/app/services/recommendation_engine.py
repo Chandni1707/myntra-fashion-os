@@ -149,7 +149,7 @@ OCCASION_MATCH_MAP = {
     },
     "concert": {
         "exact": ["concert"],
-        "fallback": ["party", "casual"],
+        "fallback": ["party", "casual"],pip show huggingface-hub
     },
     "date": {
         "exact": ["date"],
@@ -500,9 +500,9 @@ def score_product(
     )
 
     if visual_score > 0:
-        score += visual_score * 100.0
+        score += visual_score * 250.0
         reasons.append(
-            "Visually similar to your uploaded inspiration"
+            "Visually similar to your inspiration"
         )
     if semantic_score > 0:
         score += semantic_score * 100.0
@@ -541,16 +541,120 @@ def score_product(
     detected_subcategories = set(get_detected_subcategories(analysis))
     detected_categories = set(get_detected_categories(analysis))
     detected_colors = set(get_detected_colors(analysis))
+    # -----------------------------------------------------
+    # Intent-aware visual scoring
+    # -----------------------------------------------------
 
-    if product_subcategory and product_subcategory in detected_subcategories:
-        score += 18.0 if "recreate_look" in actions else 8.0
-        reasons.append("Similar to your uploaded inspiration")
-    elif product_category and product_category in detected_categories:
-        score += 10.0 if "recreate_look" in actions else 4.0
-        reasons.append("Matches an item category from your inspiration")
-    if product_colors & detected_colors:
-        score += 8.0 if "recreate_look" in actions else 3.0
-        reasons.append("Keeps a color from your inspiration")
+    # 1. RECREATE LOOK
+    # User wants almost the same outfit
+    if "recreate_look" in actions:
+        if (
+            product_subcategory
+            and product_subcategory in detected_subcategories
+        ):
+            score += 60
+            reasons.append(
+                "Same clothing type as your inspiration"
+            )
+
+        elif (
+            product_category
+            and product_category in detected_categories
+        ):
+            score += 25
+            reasons.append(
+                "Matches your inspiration category"
+            )
+
+        if product_colors & detected_colors:
+            score += 12
+            reasons.append(
+                "Keeps similar colors"
+            )
+
+    # -----------------------------------------------------
+    # COMPLETE LOOK
+    # Recommend only missing items
+    # -----------------------------------------------------
+
+    elif "complete_look" in actions:
+
+        if (
+            product_category
+            not in detected_categories
+        ):
+            score += 18
+            reasons.append(
+                "Completes your outfit"
+            )
+
+        if product_colors & detected_colors:
+            score += 8
+            reasons.append(
+                "Matches your outfit colors"
+            )
+
+    # -----------------------------------------------------
+    # TRANSFORM STYLE
+    # Allow changing style but keep outfit related
+    # -----------------------------------------------------
+
+    elif "transform_style" in actions:
+
+        if (
+            product_category
+            and product_category in detected_categories
+        ):
+            score += 18
+            reasons.append(
+                "Suitable replacement"
+            )
+
+        if target_style and target_style in product_styles:
+            score += 20
+            reasons.append(
+                "Matches requested style"
+            )
+
+
+    # -----------------------------------------------------
+    # REPLACE ITEM
+    # Keep all other categories
+    # -----------------------------------------------------
+
+    elif get_replace_categories(parsed_intent):
+
+        replace_categories = get_replace_categories(
+            parsed_intent
+        )
+
+        if product_category in replace_categories:
+
+            score += 30
+
+            reasons.append(
+                "Replacement for requested item"
+            )
+
+
+    # -----------------------------------------------------
+    # DEFAULT
+    # General recommendation
+    # -----------------------------------------------------
+
+    else:
+
+        if (
+            product_category
+            and product_category in detected_categories
+        ):
+            score += 10
+
+        if (
+            product_colors
+            and product_colors & detected_colors
+        ):
+            score += 5
 
     return {
         **product,
@@ -695,39 +799,42 @@ def select_best_product(
         if remaining_budget is not None and price > remaining_budget:
             continue
         candidate = product.copy()
+        # Give a small bonus to products that are visually similar
+        visual_bonus = float(candidate.get("semantic_score", 0))
+        candidate["final_selection_score"] = (
+            candidate.get("recommendation_score", 0)
+            + visual_bonus * 20
+        )
         formality = formality_score(
-          candidate,
-          parsed_intent,
+            candidate,
+            parsed_intent,
         )
         compatibility, compatibility_reasons = outfit_compatibility_score(
-          candidate,
-          selected_items,
-         )
+            candidate,
+            selected_items,
+        )
         harmony = color_harmony_score(candidate, selected_items, user_preferences)
         candidate["formality_score"] = round(formality, 2)
-        candidate["compatibility_score"] = round(
-          compatibility,
-           2,
-         )
-
+        candidate["compatibility_score"] = round(compatibility, 2)
         candidate["color_harmony_score"] = round(harmony, 2)
         candidate["final_selection_score"] = round(
-            float(candidate.get("recommendation_score", 0.0)) + harmony + formality + compatibility, 2
+            float(candidate.get("recommendation_score", 0.0))
+            + harmony
+            + formality
+            + compatibility,
+            2,
         )
         if formality > 0:
-         candidate.setdefault("match_reasons", []).append(
-        "Matches the expected level of formality"
-          )
+            candidate.setdefault("match_reasons", []).append(
+                "Matches the expected level of formality"
+            )
 
         if harmony > 0 and selected_items:
             candidate.setdefault("match_reasons", []).append(
                 "Coordinates with the selected outfit colors"
             )
+        candidate.setdefault("match_reasons", []).extend(compatibility_reasons)
         candidates.append(candidate)
-        candidate.setdefault(
-          "match_reasons",
-           []
-        ).extend(compatibility_reasons)
     if not candidates:
         return None
     return max(candidates, key=lambda p: (p.get("final_selection_score", 0), -safe_price(p)))
