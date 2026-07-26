@@ -1,9 +1,12 @@
 from functools import lru_cache
 from pathlib import Path
-import requests
+
+import torch
+from PIL import Image
+from transformers import BlipForConditionalGeneration, BlipProcessor
 
 
-FLORENCE_API = "http://10.54.13.122:8000/describe"
+MODEL_NAME = "Salesforce/blip-image-captioning-base"
 
 
 COLORS = [
@@ -30,38 +33,38 @@ COLORS = [
 
 FASHION_ITEMS = {
     "top": [
-        "shirt",
-        "t-shirt",
-        "oversized t-shirt",
-        "graphic tee",
-        "tank top",
-        "cami",
-        "camisole",
-        "henley",
-        "polo",
-        "crop top",
-        "kurti",
-        "kurta",
-        "hoodie",
-        "sweatshirt",
-        "blazer",
+       "shirt",
+    "t-shirt",
+    "oversized t-shirt",
+    "graphic tee",
+    "tank top",
+    "cami",
+    "camisole",
+    "henley",
+    "polo",
+    "crop top",
+    "kurti",
+    "kurta",
+    "hoodie",
+    "sweatshirt",
+    "blazer"
     ],
 
     "bottom": [
-        "cargo pants",
-        "cargo",
-        "joggers",
-        "jeans",
-        "wide leg jeans",
-        "mom jeans",
-        "skinny jeans",
-        "straight jeans",
-        "flared jeans",
-        "leggings",
-        "palazzo",
-        "trousers",
-        "shorts",
-        "skirt",
+         "cargo pants",
+    "cargo",
+    "joggers",
+    "jeans",
+    "wide leg jeans",
+    "mom jeans",
+    "skinny jeans",
+    "straight jeans",
+    "flared jeans",
+    "leggings",
+    "palazzo",
+    "trousers",
+    "shorts",
+    "skirt"
     ],
 
     "dress": [
@@ -101,6 +104,8 @@ FASHION_ITEMS = {
         "scarf",
     ],
 }
+
+
 AESTHETIC_RULES = {
     "casual": [
         "jeans",
@@ -140,8 +145,6 @@ AESTHETIC_RULES = {
         "silk",
     ],
 }
-
-
 FIT_RULES = {
     "oversized": "oversized",
     "slim": "slim",
@@ -154,7 +157,6 @@ FIT_RULES = {
     "straight": "straight",
 }
 
-
 SLEEVE_RULES = {
     "long sleeve": "long",
     "full sleeve": "long",
@@ -163,7 +165,6 @@ SLEEVE_RULES = {
     "sleeveless": "sleeveless",
     "three-quarter": "3/4",
 }
-
 
 PATTERN_RULES = {
     "solid": "solid",
@@ -177,7 +178,6 @@ PATTERN_RULES = {
     "lace": "lace",
 }
 
-
 NECKLINE_RULES = {
     "v-neck": "v-neck",
     "round neck": "round",
@@ -186,7 +186,6 @@ NECKLINE_RULES = {
     "shirt collar": "collared",
     "off-shoulder": "off-shoulder",
 }
-
 
 SILHOUETTE_RULES = {
     "wrap": "wrap",
@@ -198,6 +197,37 @@ SILHOUETTE_RULES = {
     "mini": "mini",
     "layered": "layered",
 }
+
+
+def get_device():
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+
+    if hasattr(torch.backends, "mps"):
+        if torch.backends.mps.is_available():
+            return torch.device("mps")
+
+    return torch.device("cpu")
+
+
+@lru_cache(maxsize=1)
+def load_blip_model():
+    device = get_device()
+
+    print(f"Loading BLIP model on: {device}")
+
+    processor = BlipProcessor.from_pretrained(MODEL_NAME)
+
+    model = BlipForConditionalGeneration.from_pretrained(
+        MODEL_NAME
+    )
+
+    model = model.to(device)
+    model.eval()
+
+    print("BLIP model loaded successfully.")
+
+    return processor, model, device
 
 
 def find_color_before_item(caption, item):
@@ -229,7 +259,7 @@ def extract_fashion_items(caption):
 
     for category, item_names in FASHION_ITEMS.items():
 
-        for item_name in sorted(item_names, key=len, reverse=True):
+        for item_name in sorted(item_names,key=len,reverse=True,):
 
             if item_name in caption_lower:
 
@@ -251,21 +281,20 @@ def extract_fashion_items(caption):
 
     return detected_items
 
-
 def extract_aesthetics(caption):
-
     caption_lower = caption.lower()
 
     detected_aesthetics = []
 
     for aesthetic, keywords in AESTHETIC_RULES.items():
 
-        if any(keyword in caption_lower for keyword in keywords):
+        if any(
+            keyword in caption_lower
+            for keyword in keywords
+        ):
             detected_aesthetics.append(aesthetic)
 
     return detected_aesthetics
-
-
 def extract_attributes(caption: str):
 
     caption = caption.lower()
@@ -300,7 +329,6 @@ def extract_attributes(caption: str):
 
     return attributes
 
-
 def extract_dominant_colors(caption: str):
 
     caption = caption.lower()
@@ -321,33 +349,51 @@ def analyze_fashion_image(image_path: str) -> dict:
             f"Image not found: {image_path}"
         )
 
-    print("Sending image to Florence-2 API...")
+    processor, model, device = load_blip_model()
 
-    with open(path, "rb") as image_file:
+    image = Image.open(path).convert("RGB")
 
-        response = requests.post(
-            FLORENCE_API,
-            files={
-                "file": image_file
-            },
-            timeout=120,
+    prompts = [
+        "Describe the clothing in detail.",
+        "What top is the person wearing?",
+        "What bottom is the person wearing?",
+        "Describe the footwear.",
+        "Describe the accessories.",
+        "What colors are visible?",
+        "What fashion style is this outfit?"
+    ]
+
+    captions = []
+
+    for prompt in prompts:
+
+        inputs = processor(
+            images=image,
+            text=prompt,
+            return_tensors="pt",
         )
 
-    response.raise_for_status()
+        inputs = {
+            k: v.to(device)
+            for k, v in inputs.items()
+        }
 
-    result = response.json()
+        with torch.inference_mode():
 
-    full_caption = result["description"]
+            output = model.generate(
+                **inputs,
+                max_new_tokens=60,
+            )
 
-    print("\n========== FLORENCE DESCRIPTION ==========")
-    print(full_caption)
-    print("==========================================\n")
-
-    if isinstance(full_caption, dict):
-        full_caption = ". ".join(
-            full_caption.get("labels", [])
+        answer = processor.decode(
+            output[0],
+            skip_special_tokens=True,
         )
-    print(full_caption)
+
+        captions.append(answer)
+
+    full_caption = ". ".join(captions)
+
     items = extract_fashion_items(full_caption)
 
     aesthetics = extract_aesthetics(full_caption)
@@ -358,9 +404,9 @@ def analyze_fashion_image(image_path: str) -> dict:
 
     return {
 
-        "model": "Microsoft Florence-2",
+        "model": MODEL_NAME,
 
-        "device": "Remote Mac API",
+        "device": str(device),
 
         "overall_description": full_caption,
 

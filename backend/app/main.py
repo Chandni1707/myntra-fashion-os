@@ -5,6 +5,10 @@ from app.api.auth import router as auth_router
 from app.api.users import router as users_router
 from app.api.capture import router as capture_router
 from app.api.visual_search import router as visual_router
+from app.api.event_planner import router as event_planner_router
+from app.api.profile import router as profile_router
+from app.api.history import router as history_router
+
 app = FastAPI(
     title="Myntra Fashion OS API",
     description="AI-powered universal fashion capture and life event planner",
@@ -15,6 +19,9 @@ app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(capture_router)
 app.include_router(visual_router)
+app.include_router(event_planner_router)
+app.include_router(profile_router)
+app.include_router(history_router)
 
 app.add_middleware(
     CORSMiddleware,

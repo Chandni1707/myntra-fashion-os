@@ -44,3 +44,6 @@ backend/test_intend.py
 
 #  Temporary images
 # backend/image.png
+uploads/
+# or
+uploads/frames/

@@ -149,7 +149,7 @@ OCCASION_MATCH_MAP = {
     },
     "concert": {
         "exact": ["concert"],
-        "fallback": ["party", "casual"],pip show huggingface-hub
+        "fallback": ["party", "casual"],
     },
     "date": {
         "exact": ["date"],

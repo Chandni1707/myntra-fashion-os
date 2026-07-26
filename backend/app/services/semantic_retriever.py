@@ -4,6 +4,7 @@ import json
 import faiss
 import numpy as np
 from sentence_transformers import SentenceTransformer
+from app.event_planner.rag_engine import retrieve_text
 
 from threading import Lock
 _model = None
@@ -159,8 +160,18 @@ def build_semantic_query(
     expanded_intent = ""
 
     try:
-       if original_prompt:
-        expanded_intent = expand_fashion_intent(original_prompt)
+        rag_context = ""
+
+        # Use RAG only for calendar/event requests
+        if parsed_intent.get("event_mode", False):
+            rag_context = retrieve_text(original_prompt)
+
+        if original_prompt:
+            expanded_intent = expand_fashion_intent(
+                original_prompt,
+                rag_context=rag_context,
+            )
+
     except Exception as e:
         print(f"Intent expansion failed: {e}")
 
@@ -168,19 +179,21 @@ def build_semantic_query(
     preferred_styles_text = ", ".join(preferred_styles)
     preferred_colors_text = ", ".join(preferred_colors)
 
-    query = f"""
-User fashion request: {original_prompt}.
-Requested target style: {target_style}.
-Occasion: {occasion}.
-Requested actions: {actions_text}.
-User preferred styles: {preferred_styles_text}.
-User preferred colors: {preferred_colors_text}.
-User preferred fit: {preferred_fit}.
-Original fashion inspiration: {overall_description}.
+    query_lines = [
+        f"User fashion request: {original_prompt}.",
+        f"Requested target style: {target_style}.",
+        f"Occasion: {occasion}.",
+        f"Requested actions: {actions_text}.",
+        f"User preferred styles: {preferred_styles_text}.",
+        f"User preferred colors: {preferred_colors_text}.",
+        f"User preferred fit: {preferred_fit}.",
+        f"Original fashion inspiration: {overall_description}.",
+        "",
+        "Expanded fashion understanding:",
+        f"{expanded_intent}",
+    ]
 
-Expanded fashion understanding:
-{expanded_intent}
-""" 
+    query = "\n".join(query_lines)
     print("\n========== SEMANTIC QUERY ==========")
     print(query)
     print("===================================\n")
@@ -303,6 +316,55 @@ def get_product_metadata() -> List[Dict[str, Any]]:
 # =========================================================
 # Search semantically relevant products
 # =========================================================
+CATEGORY_MAP = {
+    "topwear": [
+        "top",
+        "shirt",
+        "t-shirt",
+        "kurti",
+        "blouse"
+    ],
+
+    "bottomwear": [
+        "bottom",
+        "jeans",
+        "pants",
+        "trousers",
+        "leggings",
+        "palazzo"
+    ],
+
+    "dress": [
+        "dress",
+        "kurti",
+        "lehenga",
+        "saree",
+        "anarkali"
+    ],
+
+    "footwear": [
+        "footwear",
+        "heels",
+        "sandals",
+        "flats",
+        "shoes"
+    ],
+
+    "bag": [
+        "bag",
+        "handbag",
+        "backpack",
+        "clutch"
+    ],
+
+    "jewellery": [
+        "jewellery",
+        "earrings",
+        "necklace",
+        "ring",
+        "bracelet"
+    ]
+}
 
 def search_semantic_products(
     query: str,
@@ -344,7 +406,50 @@ def search_semantic_products(
             int(faiss_index)
         ].copy()
 
+        occasions = [
+            o.lower()
+            for o in product_metadata.get("occasions", [])
+        ]
+
+        styles = [
+            s.lower()
+            for s in product_metadata.get("styles", [])
+        ]
+
+        subcategory = str(
+            product_metadata.get("subcategory", "")
+        ).lower()
+
+        category_name = str(
+            product_metadata.get("category", "")
+        ).lower()
+
+        query_lower = query.lower()
+
         semantic_score = float(score)
+
+        # -----------------------------
+        # Style Boost
+        # -----------------------------
+        final_score = semantic_score
+
+        for style in styles:
+            if style in query_lower:
+                final_score += 0.10
+
+        # -----------------------------
+        # Beach Vacation penalties
+        # -----------------------------
+        if "beach" in query_lower:
+
+            if subcategory == "jeans":
+                final_score -= 0.20
+
+            if "formal" in styles:
+                final_score -= 0.20
+
+            if subcategory == "shirt":
+                final_score -= 0.10
 
         # -----------------------------------------
         # Minimum semantic score filter
@@ -365,25 +470,44 @@ def search_semantic_products(
                 product_metadata.get("gender", "")
             ).lower()
 
-            if product_gender != gender.lower():
+            if gender.lower() == "female":
+                valid = ["women", "woman", "female", "girls", "girl", "ladies"]
+
+            elif gender.lower() == "male":
+                valid = ["men", "man", "male", "boys", "boy"]
+
+            else:
+                valid = [gender.lower()]
+
+            if not any(v in product_gender for v in valid):
                 continue
 
         # -----------------------------------------
         # Category filter
         # -----------------------------------------
-
         if category is not None:
             product_category = str(
                 product_metadata.get("category", "")
             ).lower()
 
-            if product_category != category.lower():
+            product_subcategory = str(
+                product_metadata.get("subcategory", "")
+            ).lower()
+
+            valid_categories = CATEGORY_MAP.get(
+                category.lower(),
+                [category.lower()]
+            )
+
+            if not any(
+                item == product_category or item == product_subcategory
+                for item in valid_categories
+            ):
                 continue
 
         # -----------------------------------------
         # Maximum price filter
         # -----------------------------------------
-
         if max_price is not None:
             product_price = product_metadata.get("price")
 
@@ -399,7 +523,7 @@ def search_semantic_products(
         # -----------------------------------------
 
         product_metadata["semantic_score"] = round(
-            semantic_score,
+            final_score,
             4,
         )
 
@@ -407,6 +531,29 @@ def search_semantic_products(
 
         if len(results) >= top_k:
             break
+
+    print("=" * 60)
+    print("QUERY:", query)
+    print("CATEGORY:", category)
+    print("RESULTS FOUND:", len(results))
+
+    for p in results[:5]:
+        print(
+            p["name"],
+            "|",
+            p.get("category"),
+            "|",
+            p.get("gender"),
+            "|",
+            p.get("semantic_score"),
+        )
+
+    print("=" * 60)
+
+    results.sort(
+        key=lambda x: x["semantic_score"],
+        reverse=True,
+    )
 
     return results
 # =========================================================

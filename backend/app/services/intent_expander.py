@@ -30,27 +30,52 @@ def load_model():
     return tokenizer, model, device
 
 
-def expand_fashion_intent(prompt: str):
+def expand_fashion_intent(
+    prompt: str,
+    rag_context: str = ""
+):
 
     tokenizer, model, device = load_model()
+    if rag_context.strip():
+        user_prompt = f"""
+User Event:
+{prompt}
+
+Retrieved Fashion Knowledge:
+{rag_context}
+
+Using ONLY the retrieved knowledge, expand this into related fashion concepts.
+
+Return ONLY short fashion concepts.
+One per line.
+
+Do not explain.
+Do not answer the user.
+Do not recommend specific products.
+"""
+    else:
+        user_prompt = prompt
 
     messages = [
         {
             "role": "system",
-            "content": (
-                "You are an expert fashion stylist.\n"
-                "Expand the user's fashion request into related fashion concepts.\n"
-                "Return ONLY short phrases, one per line.\n"
-                "Do not answer the user.\n"
-                "Do not recommend products.\n"
-                "Do not use bullets or numbering."
-            ),
-        },
-        {
-            "role": "user",
-            "content": prompt,
-        },
-    ]
+        "content": (
+            "You are an expert fashion stylist.\n"
+            "Expand the user's fashion request into related fashion concepts.\n"
+            "Return ONLY short phrases, one per line.\n"
+            "Do not answer the user.\n"
+            "Do not recommend products.\n"
+            "Do not use bullets or numbering."
+        ),
+    },
+    {
+        "role": "user",
+        "content": user_prompt,
+    },
+]
+
+   
+   
 
     text = tokenizer.apply_chat_template(
         messages,
