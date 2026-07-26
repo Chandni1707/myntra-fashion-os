@@ -303,43 +303,125 @@ http://localhost:8080
 
 ## Authentication
 
-```
+```http
 POST /api/auth/register
+```
 
+Registers a new user.
+
+```http
 POST /api/auth/login
 ```
 
+Authenticates an existing user and returns a JWT access token.
+
 ---
 
-## Profile
+## User Profile
 
-```
+```http
 GET /profile
+```
 
+Fetches the authenticated user's profile and fashion preferences.
+
+```http
 PUT /profile
 ```
 
----
-
-## Event Planner
-
-```
-POST /event-planner
-
-GET /event-planner
-```
+Updates user preferences, favorite brands, colors, styles, budget, fit, and gender.
 
 ---
 
 ## Fashion Capture
 
-```
+```http
 POST /capture
+```
 
+Uploads fashion images/videos for AI analysis.
+
+```http
 POST /visual-search
 ```
 
+Performs AI-powered fashion similarity search.
+
 ---
+
+## Recommendations
+
+```http
+GET /recommendations
+```
+
+Returns personalized outfit recommendations based on user preferences.
+
+```http
+POST /recommendations/generate
+```
+
+Generates AI-powered outfit recommendations.
+
+---
+
+## Event Planner
+
+```http
+GET /event-planner
+```
+
+Retrieves all saved fashion events.
+
+```http
+POST /event-planner
+```
+
+Creates a new event and generates personalized outfit suggestions.
+
+```http
+PUT /event-planner/{event_id}
+```
+
+Updates an existing event.
+
+```http
+DELETE /event-planner/{event_id}
+```
+
+Deletes an event.
+
+---
+
+## History
+
+```http
+GET /history
+```
+
+Returns previously generated recommendations, captures, and outfit history.
+
+```http
+DELETE /history/{history_id}
+```
+
+Deletes a history record.
+
+---
+
+## Health Check
+
+```http
+GET /health
+```
+
+Checks if the API server is running.
+
+```http
+GET /health/database
+```
+
+Checks MongoDB database connectivity.
 
 # 🎯 Impact
 
