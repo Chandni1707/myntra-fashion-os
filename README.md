@@ -4,9 +4,9 @@
 
 ### Themes Addressed
 
-**Primary Theme:** Fashion as Identity
+**Primary: Theme 3-** Fashion as Identity
 
-**Secondary Theme:** Speed & Trust
+**Secondary: Theme 2-** Speed & Trust
 
 ### Problem Statement
 
