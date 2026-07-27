@@ -40,13 +40,43 @@ Current fashion platforms primarily focus on keyword-based searches and purchase
 
 # 💡 Our Solution
 
-FashionOS is an AI-powered intelligent fashion assistant that transforms the shopping experience by combining personalization, computer vision, and event planning into a single platform.
+We've developed **FashionOS**, an AI-powered, vibe-driven fashion intelligence platform that redefines fashion discovery through multimodal AI, personalized recommendations, and event-aware styling. Built using a **vibe coding** development workflow, FashionOS combines rapid AI-assisted development with modern machine learning techniques to deliver an intelligent and engaging shopping experience.
 
-Instead of simply searching for clothes, FashionOS understands the user's identity, preferences, occasions, and fashion goals to recommend complete outfits with intelligent reasoning.
-
-The platform provides proactive recommendations while enabling users to discover fashion inspiration through images, videos, and AI-powered analysis.
+Instead of relying on traditional keyword searches or purchase history, FashionOS understands a user's outfit, fashion preferences, upcoming events, and personal style to recommend complete looks that are visually similar, semantically relevant, and context-aware.
 
 ---
+## 🚀 Key Solution Components
+
+### 👗 AI-Powered Fashion Understanding
+
+- Florence-2 Vision Language Model for outfit understanding
+- Automatic clothing, color, and style recognition
+- Rich natural language outfit description generation
+- Fashion attribute extraction using Intent Parsing
+
+### 🔍 Intelligent Fashion Discovery
+
+- CLIP-powered semantic similarity search
+- Meaning-based product retrieval instead of keyword matching
+- Fuzzy matching for typo correction and natural language understanding
+- Multi-factor recommendation ranking
+
+### 📅 Context-Aware Fashion Planning
+
+- Personalized outfit recommendations for different occasions
+- Event-aware outfit generation
+- Budget-conscious styling suggestions
+- Fashion profile–based personalization
+
+### 🧠 Personalized Recommendation Engine
+
+- Semantic similarity matching
+- Color and style compatibility analysis
+- Recommendation history and learning
+- Personalized fashion insights
+- 
+---
+
 
 # 🌟 Core Features
 
@@ -126,18 +156,20 @@ Users can revisit any previous recommendation instantly.
 
 # 🎨 Technical Architecture
 
-## Frontend
+### Frontend
 
+The FashionOS frontend was rapidly prototyped using **Lovable AI** following a **vibe coding** approach, enabling fast UI development and iterative design improvements. The generated interface was then refined, customized, and integrated with the application's business logic and backend APIs to deliver a seamless user experience.
+
+**Technologies Used**
+- Lovable AI (Rapid UI Prototyping)
 - React
 - TypeScript
 - Vite
 - Tailwind CSS
+- shadcn/ui
 - TanStack Router
 - Axios
 - Lucide React Icons
-- ShadCN UI
-
----
 
 ## Backend
 
